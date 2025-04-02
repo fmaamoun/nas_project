@@ -261,7 +261,7 @@ class MPLSConfig:
                 try:
                     ip = next(self.backbone_as.loopback_iterator)
                     router.interfaces["Loopback0"].ip_address = f"{ip}"
-                    router.interfaces["Loopback0"].ip_mask = "255.255.255.0"
+                    router.interfaces["Loopback0"].ip_mask = "255.255.0.0"
                 except StopIteration:
                     raise ValueError("Pas assez d'adresses loopback disponibles")
 
@@ -326,3 +326,24 @@ class MPLSConfig:
         for name, router in self.routers.items():
             configs[name] = "\n".join(router.generate_config_lines(pe_routers))
         return configs
+
+    def recap(self):
+        """
+        Génère un récapitulatif du réseau, montrant toutes les adresses d'interface pour chaque routeur.
+        """
+        recap_lines = ["Récapitulatif du réseau MPLS:", "=" * 50]
+
+        # Parcourir tous les routeurs
+        for router_name, router in sorted(self.routers.items()):
+            recap_lines.append(f"\nRouteur: {router_name} (Type: {router.type})")
+            recap_lines.append("-" * 50)
+
+            # Parcourir les interfaces de chaque routeur
+            for iface_name, iface in sorted(router.interfaces.items()):
+                ip_info = f"{iface.ip_address}/{iface.ip_mask}" if iface.ip_address else "Pas d'adresse IP"
+
+                recap_lines.append(f"  Interface: {iface_name}")
+                recap_lines.append(f"    Adresse IP: {ip_info}")
+
+        return "\n".join(recap_lines)
+

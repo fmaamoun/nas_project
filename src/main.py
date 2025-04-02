@@ -123,6 +123,9 @@ class ConfigGeneratorApp:
             config = MPLSConfig(self.intent_file)
             project.write_router_config(config.generate_all_configs())
 
+            # Afficher le récapitulatif dans une nouvelle fenêtre
+            self.show_network_recap(config)
+
             # Show success message
             CTkMessagebox(
                 title="Success",
@@ -162,6 +165,33 @@ class ConfigGeneratorApp:
         finally:
             self.reset()
 
+    def show_network_recap(self, config):
+        """
+        Affiche un récapitulatif du réseau dans une nouvelle fenêtre.
+        """
+        # Créer une nouvelle fenêtre
+        recap_window = ctk.CTkToplevel(self.root)
+        recap_window.title("Récapitulatif du Réseau")
+        recap_window.geometry("600x500")
+
+        # Créer un widget de texte pour afficher le récapitulatif
+        recap_text = ctk.CTkTextbox(recap_window, width=580, height=450)
+        recap_text.pack(padx=10, pady=10)
+
+        # Obtenir le récapitulatif du réseau
+        network_recap = config.recap()
+
+        # Insérer le récapitulatif dans le widget de texte
+        recap_text.insert("1.0", network_recap)
+        recap_text.configure(state="disabled")  # Rendre le texte non modifiable
+
+        # Bouton pour fermer la fenêtre
+        close_button = ctk.CTkButton(
+            recap_window,
+            text="Fermer",
+            command=recap_window.destroy
+        )
+        close_button.pack(pady=10)
 
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")

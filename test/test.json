@@ -1,0 +1,63 @@
+{
+  "backbone": {
+    "as_number": 65000,
+    "ipv4_ranges": {
+      "loopback": "10.0.0.0/16",
+      "physical": "192.168.0.0/16"
+    }
+  },
+  "pe_routers": [
+    {
+      "hostname": "PE1",
+      "interfaces": [
+        {"name": "Loopback0"},
+        {"name": "GigabitEthernet1/0"},
+        {"name": "GigabitEthernet2/0"}
+      ]
+    },
+    {
+      "hostname": "PE2",
+      "interfaces": [
+        {"name": "Loopback0"},
+        {"name": "GigabitEthernet1/0"},
+        {"name": "GigabitEthernet2/0"}
+      ]
+    }
+  ],
+  "p_routers": [
+    {
+      "hostname": "P1",
+      "interfaces": [
+        {"name": "Loopback0"},
+        {"name": "GigabitEthernet1/0"},
+        {"name": "GigabitEthernet2/0"}
+      ]
+    },
+    {
+      "hostname": "P2",
+      "interfaces": [
+        {"name": "Loopback0"},
+        {"name": "GigabitEthernet1/0"},
+        {"name": "GigabitEthernet2/0"}
+      ]
+    }
+  ],
+  "subnets": [
+    [
+      {"router": "PE1", "interface": "GigabitEthernet1/0"},
+      {"router": "P1", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "P1", "interface": "GigabitEthernet2/0"},
+      {"router": "PE2", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "PE2", "interface": "GigabitEthernet2/0"},
+      {"router": "P2", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "P2", "interface": "GigabitEthernet2/0"},
+      {"router": "PE1", "interface": "GigabitEthernet2/0"}
+    ]
+  ]
+}

@@ -152,8 +152,8 @@ class Router:
 
         lines = [
             f"router bgp {as_number}",
-            f" bgp router-id {router_id}",
-            " bgp log-neighbor-changes"
+            "no bgp default ipv4-unicast",
+            f" bgp router-id {router_id}"
         ]
 
         # Ajouter les neighbors (autres PE)
@@ -166,11 +166,12 @@ class Router:
 
         # Configuration address-family IPv4
         lines.append(" !")
-        lines.append(" address-family ipv4")
+        lines.append(" address-family vpnv4")
         for pe_name, pe_router in pe_routers.items():
             if pe_name != self.hostname:
                 neighbor_ip = pe_router.interfaces["Loopback0"].ip_address
                 lines.append(f"  neighbor {neighbor_ip} activate")
+                lines.append(f"  neighbor {neighbor_ip} send-community both")
         lines.append(" exit-address-family")
         lines.append("!")
 

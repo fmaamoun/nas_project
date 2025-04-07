@@ -1,18 +1,45 @@
 {
-  "backbone": {
-    "as_number": 65000,
-    "ipv4_ranges": {
-      "loopback": "10.0.0.0/16",
-      "physical": "192.168.0.0/16"
+  "as": [
+    {
+      "as_number": 65000,
+      "backbone": true,
+      "ipv4_ranges": {
+        "loopback": "10.0.0.0/16",
+        "physical": "192.168.0.0/16"
+      }
+    },
+    {
+      "as_number": 65001,
+      "ipv4_ranges": {
+        "physical": "193.168.0.0/16"
+      }
+    },
+    {
+      "as_number": 65002,
+      "ipv4_ranges": {
+        "physical": "194.168.0.0/16"
+      }
     }
-  },
+  ],
   "pe_routers": [
     {
       "hostname": "PE1",
       "interfaces": [
         {"name": "Loopback0"},
         {"name": "GigabitEthernet1/0"},
-        {"name": "GigabitEthernet2/0"}
+        {"name": "GigabitEthernet2/0"},
+        {"name": "GigabitEthernet3/0"}
+      ],
+      "vrfs": [
+        {
+          "name": "CLIENT1",
+          "rd": "65000:1",
+          "route_targets": {
+            "export": ["65000:1"],
+            "import": ["65000:2"]
+          },
+          "associated_interfaces": ["GigabitEthernet3/0"]
+        }
       ]
     },
     {
@@ -20,7 +47,19 @@
       "interfaces": [
         {"name": "Loopback0"},
         {"name": "GigabitEthernet1/0"},
-        {"name": "GigabitEthernet2/0"}
+        {"name": "GigabitEthernet2/0"},
+        {"name": "GigabitEthernet3/0"}
+      ],
+      "vrfs": [
+        {
+          "name": "CLIENT2",
+          "rd": "65000:2",
+          "route_targets": {
+            "export": ["65000:2"],
+            "import": ["65000:1"]
+          },
+          "associated_interfaces": ["GigabitEthernet3/0"]
+        }
       ]
     }
   ],
@@ -42,6 +81,18 @@
       ]
     }
   ],
+  "ce_routers": [
+    {
+      "as_number": 65001,
+      "hostname": "CE1",
+      "interfaces": [{"name": "GigabitEthernet1/0"}]
+    },
+    {
+      "as_number": 65002,
+      "hostname": "CE2",
+      "interfaces": [{"name": "GigabitEthernet1/0"}]
+    }
+  ],
   "subnets": [
     [
       {"router": "PE1", "interface": "GigabitEthernet1/0"},
@@ -58,6 +109,14 @@
     [
       {"router": "P2", "interface": "GigabitEthernet2/0"},
       {"router": "PE1", "interface": "GigabitEthernet2/0"}
+    ],
+    [
+      {"router": "PE1", "interface": "GigabitEthernet3/0"},
+      {"router": "CE1", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "PE2", "interface": "GigabitEthernet3/0"},
+      {"router": "CE2", "interface": "GigabitEthernet1/0"}
     ]
   ]
 }

@@ -1,81 +1,87 @@
 import ipaddress
 from datetime import datetime, timezone
-import re
+from typing import Dict, List
 
 
 class Interface:
     """Représentation d'une interface réseau sur un routeur."""
 
-    def __init__(self, iface_intent):
+    def __init__(self, iface_intent: dict) -> None:
         self.name = iface_intent["name"]
-        self.ip_address = None
-        self.ip_mask = None
-        self.mpls_enabled = False
-        self.is_internal = False
+        self.ip_address: str = None
+        self.ip_mask: str = None
+        self.mpls_enabled: bool = False
+        self.is_internal: bool = False
 
-    def generate_config(self, igp="ospf", router_type=None, as_obj=None):
-        """Génère la configuration de l'interface."""
+    def generate_config(self, igp: str = "ospf", router_type: str = None, as_obj: "AS" = None,
+                        associated_vrf: dict = None) -> List[str]:
+        """
+        Génère la configuration de l'interface.
+        Si 'associated_vrf' est fourni, la configuration inclut également le VRF forwarding.
+        """
         lines = [f"interface {self.name}"]
-
-        # Configuration IP
+        if associated_vrf:
+            lines.append(f" ip vrf forwarding {associated_vrf['name']}")
         if self.ip_address:
             lines.append(f" ip address {self.ip_address} {self.ip_mask}")
-
-        # Configuration OSPFv2 - Utilisation du numéro d'AS comme area
-        if self.ip_address and igp == "ospf" and as_obj:
-            # Pour les routeurs PE : uniquement interfaces internes et Loopback0
-            # Pour les autres routeurs : toutes les interfaces
-            if router_type != "PE" or self.is_internal or self.name == "Loopback0":
+        # Ajout des commandes OSPF et négociation sur les interfaces de type GigabitEthernet
+        if router_type in ["PE", "P"] and igp == "ospf" and as_obj:
+            if self.is_internal or self.name == "Loopback0":
                 lines.append(f" ip ospf 1 area {as_obj.as_number}")
-
-        # Negotiation auto pour GigabitEthernet
         if "GigabitEthernet" in self.name:
             lines.append(" negotiation auto")
-
         lines.append("!")
         return lines
 
 
+class AS:
+    """Représentation d'un Système Autonome."""
+
+    def __init__(self, as_intent: dict) -> None:
+        self.as_number: int = as_intent["as_number"]
+        self.backbone: bool = as_intent.get("backbone", False)
+        self.ipv4_ranges: dict = as_intent["ipv4_ranges"]
+        self.mpls_config = None  # Sera défini par MPLSConfig._initialize_routers
+
+        # Initialisation des itérateurs d'adresses
+        if "loopback" in self.ipv4_ranges:
+            self.loopback_iterator = ipaddress.IPv4Network(self.ipv4_ranges["loopback"]).hosts()
+        if "physical" in self.ipv4_ranges:
+            self.physical_iterator = ipaddress.IPv4Network(self.ipv4_ranges["physical"]).subnets(new_prefix=24)
+
+
 class Router:
-    """
-    Représente un routeur réseau avec ses interfaces et sa configuration.
-    """
+    """Représente un routeur avec sa configuration complète."""
 
-    def __init__(self, router_intent, as_obj, router_type):
-        self.hostname = router_intent["hostname"]
-        self.type = router_type
-        self.interfaces = {}
+    def __init__(self, router_intent: dict, as_obj: AS, router_type: str) -> None:
+        self.hostname: str = router_intent["hostname"]
+        self.type: str = router_type
+        self.as_obj: AS = as_obj
+        self.interfaces: Dict[str, Interface] = {}
+        self.vrfs: List[dict] = router_intent.get("vrfs", [])
 
-        # Création des interfaces
-        for iface_intent in router_intent["interfaces"]:
-            iface = Interface(iface_intent)
-            self.interfaces[iface.name] = iface
+        for iface in router_intent.get("interfaces", []):
+            self.interfaces[iface["name"]] = Interface(iface)
 
-        self.as_obj = as_obj  # Référence à l'objet AS
-
-    def generate_config_lines(self, pe_routers=None):
-        """
-        Génère la configuration complète du routeur sous forme de liste de chaînes.
-        """
+    def generate_config_lines(self, pe_routers: Dict[str, "Router"] = None) -> List[str]:
+        """Génère la configuration complète du routeur."""
         lines = self._generate_header()
         lines.extend(self._generate_interfaces())
-        lines.extend(self._generate_ospf())
-
-        # Ajouter la configuration BGP si c'est un PE et si les détails des autres PE sont fournis
+        if self.type in ["PE", "P"]:
+            lines.extend(self._generate_ospf())
         if self.type == "PE" and pe_routers:
-            lines.extend(self._generate_bgp(pe_routers))
-
+            lines.extend(self._generate_mpbgp(pe_routers))
+        if self.type == "CE":
+            lines.extend(self._generate_ce_bgp())
         lines.extend(self._generate_footer())
         return lines
 
-    def _generate_header(self):
-        """
-        Génère l'en-tête de la configuration du routeur.
-        """
-        now_str = datetime.now(timezone.utc).strftime('%H:%M:%S UTC %a %b %d %Y')
-        return [
+    def _generate_header(self) -> List[str]:
+        """Génère l'en-tête de configuration."""
+        now = datetime.now(timezone.utc).strftime('%H:%M:%S UTC %a %b %d %Y')
+        lines = [
             "!",
-            f"! Last configuration change at {now_str}",
+            f"! Last configuration change at {now}",
             "!",
             "version 15.2",
             "service timestamps debug datetime msec",
@@ -83,52 +89,39 @@ class Router:
             "!",
             f"hostname {self.hostname}",
             "!",
-            "boot-start-marker",
-            "boot-end-marker",
-            "!",
             "no aaa new-model",
-            "no ip icmp rate-limit unreachable",
             "ip cef",
-            "!",
-            "no ip domain lookup",
-            "no ipv6 cef",
-            "!",
-            "mpls label protocol ldp",
-            "multilink bundle-name authenticated",
-            "!",
-            "ip tcp synwait-time 5",
-            "!",
+            "!"
         ]
 
-    def _generate_interfaces(self):
-        """
-        Génère la section de configuration des interfaces.
-        """
-        interface_lines = []
+        if self.type == "PE" and self.vrfs:
+            for vrf in self.vrfs:
+                lines.extend([
+                                 f"ip vrf {vrf['name']}",
+                                 f" rd {vrf['rd']}"
+                             ] +
+                             [f" route-target export {rt}" for rt in vrf["route_targets"]["export"]] +
+                             [f" route-target import {rt}" for rt in vrf["route_targets"]["import"]] +
+                             ["!"]
+                             )
 
-        # Passage du type de routeur et de l'AS à la méthode generate_config
-        for name, iface in sorted(self.interfaces.items()):
-            interface_lines.extend(iface.generate_config(self.as_obj.igp, self.type, self.as_obj))
+        return lines
 
-        return interface_lines
+    def _generate_interfaces(self) -> List[str]:
+        """Génère la configuration des interfaces."""
+        lines = []
+        for iface_name, iface in self.interfaces.items():
+            # Vérifier si l'interface est associée à une VRF
+            associated_vrf = next((vrf for vrf in self.vrfs if iface_name in vrf.get("associated_interfaces", [])),
+                                  None)
+            lines.extend(
+                iface.generate_config(router_type=self.type, as_obj=self.as_obj, associated_vrf=associated_vrf))
+        return lines
 
-    def _generate_unique_router_id(self):
-        """
-        Génère un router-ID unique pour le routeur.
-        """
-        # Utiliser l'adresse IP de Loopback0
-        return self.interfaces["Loopback0"].ip_address
-
-    def _generate_ospf(self):
-        """
-        Génère la configuration OSPF.
-        """
-        if self.as_obj.igp != "ospf":
-            return []
-
-        # Génération d'un router-ID unique
-        router_id = self._generate_unique_router_id()
-
+    def _generate_ospf(self) -> List[str]:
+        """Génère la configuration OSPF pour le backbone."""
+        loopback = self.interfaces.get("Loopback0")
+        router_id = loopback.ip_address if loopback and loopback.ip_address else "0.0.0.0"
         return [
             "router ospf 1",
             f" router-id {router_id}",
@@ -136,215 +129,261 @@ class Router:
             "!"
         ]
 
-    def _generate_bgp(self, pe_routers):
-        """
-        Génère la configuration BGP pour les routeurs PE.
-        """
-        # Vérifier si c'est un routeur PE
-        if self.type != "PE":
-            return []
+    def _get_ce_ip(self, vrf: dict) -> str:
+        """Retourne l'adresse IP du CE connecté à la VRF."""
+        associated_iface = vrf["associated_interfaces"][0]
 
-        # Récupérer le numéro d'AS
-        as_number = self.as_obj.as_number
+        if not hasattr(self.as_obj, 'mpls_config') or not self.as_obj.mpls_config:
+            return "0.0.0.0"
 
-        # Utiliser l'adresse Loopback0 comme router-id BGP
-        router_id = self.interfaces["Loopback0"].ip_address
+        for subnet in self.as_obj.mpls_config.subnets:
+            if len(subnet) != 2:
+                continue
 
+            # Vérifier si ce sous-réseau contient l'interface associée à la VRF
+            pe_endpoint = next((ep for ep in subnet if ep["router"] == self.hostname and
+                                ep["interface"] == associated_iface), None)
+            if not pe_endpoint:
+                continue
+
+            # Trouver l'autre extrémité (le CE)
+            ce_endpoint = next((ep for ep in subnet if ep["router"] != self.hostname), None)
+            if not ce_endpoint:
+                continue
+
+            # Obtenir l'adresse IP du CE
+            ce_router = self.as_obj.mpls_config.routers[ce_endpoint["router"]]
+            ce_iface = ce_router.interfaces[ce_endpoint["interface"]]
+
+            return ce_iface.ip_address
+
+        return "0.0.0.0"
+
+    def _generate_mpbgp(self, pe_routers: Dict[str, "Router"]) -> List[str]:
+        """Génère la configuration MP-BGP pour les PE."""
         lines = [
-            f"router bgp {as_number}",
-            "no bgp default ipv4-unicast",
-            f" bgp router-id {router_id}"
+            f"router bgp {self.as_obj.as_number}",
+            f" bgp router-id {self.interfaces['Loopback0'].ip_address}"
         ]
 
-        # Ajouter les neighbors (autres PE)
-        for pe_name, pe_router in pe_routers.items():
-            # Ne pas ajouter le routeur lui-même comme neighbor
-            if pe_name != self.hostname:
-                neighbor_ip = pe_router.interfaces["Loopback0"].ip_address
-                lines.append(f" neighbor {neighbor_ip} remote-as {as_number}")
+        # Suppression du print de debug
+        for pe in pe_routers.values():
+            if pe.hostname != self.hostname:
+                neighbor_ip = pe.interfaces["Loopback0"].ip_address
+                lines.append(f" neighbor {neighbor_ip} remote-as {self.as_obj.as_number}")
                 lines.append(f" neighbor {neighbor_ip} update-source Loopback0")
 
-        # Configuration address-family IPv4
-        lines.append(" !")
-        lines.append(" address-family vpnv4")
-        for pe_name, pe_router in pe_routers.items():
-            if pe_name != self.hostname:
-                neighbor_ip = pe_router.interfaces["Loopback0"].ip_address
-                lines.append(f"  neighbor {neighbor_ip} activate")
-                lines.append(f"  neighbor {neighbor_ip} send-community both")
-        lines.append(" exit-address-family")
-        lines.append("!")
+        lines.extend([
+            " !",
+            " address-family vpnv4",
+        ])
 
+        for pe in pe_routers.values():
+            if pe.hostname != self.hostname:
+                neighbor_ip = pe.interfaces["Loopback0"].ip_address
+                lines.append(f"  neighbor {neighbor_ip} activate")
+                lines.append(f"  neighbor {neighbor_ip} send-community extended")
+
+        lines.append(" exit-address-family")
+
+        for vrf in self.vrfs:
+            associated_iface = vrf["associated_interfaces"][0]
+            ce_remote_as = self._get_ce_as(vrf)
+            # Utiliser l'IP du CE au lieu de l'IP du PE
+            ce_ip = self._get_ce_ip(vrf)
+            lines.extend([
+                "!",
+                f" address-family ipv4 vrf {vrf['name']}",
+                f"  neighbor {ce_ip} remote-as {ce_remote_as}",
+                f"  neighbor {ce_ip} activate",
+                " exit-address-family"
+            ])
+
+        lines.append("!")
         return lines
 
-    def _generate_footer(self):
-        """
-        Génère le pied de page de la configuration du routeur.
-        """
+    def _get_ce_as(self, vrf: dict) -> int:
+        """Retourne l'AS du CE connecté à la VRF."""
+        if not hasattr(self.as_obj, 'mpls_config') or not self.as_obj.mpls_config:
+            return 0
+
+        for subnet in self.as_obj.mpls_config.subnets:
+            if len(subnet) != 2:
+                continue
+
+            routers = {subnet[0]["router"], subnet[1]["router"]}
+            if self.hostname not in routers:
+                continue
+
+            ce_router = next((r for r in routers if r != self.hostname), None)
+            if not ce_router:
+                continue
+
+            router_type = self.as_obj.mpls_config.routers[ce_router].type
+
+            if router_type == "CE":
+                return self.as_obj.mpls_config.routers[ce_router].as_obj.as_number
+
+        return 0
+
+    def _generate_ce_bgp(self) -> List[str]:
+        """Génère la configuration BGP pour les CE."""
+        if not hasattr(self.as_obj, 'mpls_config') or not self.as_obj.mpls_config:
+            return ["! Error: mpls_config not set on AS object"]
+
+        pe_ip = None
+        for subnet in self.as_obj.mpls_config.subnets:
+            if len(subnet) == 2:
+                router_names = [subnet[0]["router"], subnet[1]["router"]]
+                if self.hostname in router_names:
+                    # Trouver l'autre routeur (PE)
+                    pe_router_name = router_names[0] if router_names[1] == self.hostname else router_names[1]
+                    pe_router = self.as_obj.mpls_config.routers[pe_router_name]
+
+                    # Trouver l'interface PE connectée à ce CE
+                    pe_iface_name = subnet[0]["interface"] if subnet[0]["router"] == pe_router_name else subnet[1][
+                        "interface"]
+                    pe_iface = pe_router.interfaces[pe_iface_name]
+
+                    pe_ip = pe_iface.ip_address
+                    break
+
+        if pe_ip is None:
+            pe_ip = "0.0.0.0"
+
+        # Configuration BGP de base
+        lines = [
+            f"router bgp {self.as_obj.as_number}",
+            f" neighbor {pe_ip} remote-as {self.as_obj.mpls_config.backbone_as.as_number}",
+        ]
+
+        # Ajouter des commandes pour annoncer les réseaux du CE
+        for iface_name, iface in self.interfaces.items():
+            if iface.ip_address and iface.ip_mask:
+                # Convertir l'adresse IP et le masque en entiers
+                ip_parts = [int(p) for p in iface.ip_address.split('.')]
+                mask_parts = [int(p) for p in iface.ip_mask.split('.')]
+
+                # Calculer l'adresse réseau
+                network_parts = [ip_parts[i] & mask_parts[i] for i in range(4)]
+                network_address = '.'.join(str(p) for p in network_parts)
+
+                # Ajouter la commande réseau
+                lines.append(f" network {network_address} mask {iface.ip_mask}")
+
+        lines.append("!")
+        return lines
+
+    def _generate_footer(self) -> List[str]:
+        """Génère le pied de page de configuration."""
         return [
             "ip forward-protocol nd",
-            "!",
-            "no ip http server",
-            "no ip http secure-server",
-            "!",
-            "control-plane",
             "!",
             "line con 0",
             " exec-timeout 0 0",
             " privilege level 15",
             " logging synchronous",
-            " stopbits 1",
-            "line aux 0",
-            " exec-timeout 0 0",
-            " privilege level 15",
-            " logging synchronous",
-            " stopbits 1",
-            "line vty 0 4",
-            " login",
             "!",
             "end"
         ]
 
 
-class AS:
-    """Représentation d'un Système Autonome."""
-
-    def __init__(self, as_intent):
-        self.as_number = as_intent["as_number"]
-        self.igp = "ospf"  # Par défaut
-
-        # Initialisation des plages d'adressage
-        self.loopback_iterator = ipaddress.IPv4Network(as_intent["ipv4_ranges"]["loopback"]).hosts()
-        self.physical_iterator = ipaddress.IPv4Network(as_intent["ipv4_ranges"]["physical"]).subnets(new_prefix=24)
-
-
 class MPLSConfig:
-    """Générateur de configuration pour un réseau MPLS."""
+    """Gestionnaire principal de configuration MPLS/VPN."""
 
-    def __init__(self, intent):
-        self.intent = intent
-        self.backbone_as = self._initialize_backbone()
-        self.routers = self._initialize_routers()
-        self.subnets = self._initialize_subnets()
+    def __init__(self, intent: dict) -> None:
+        self.intent: dict = intent
+        self.as_objects: Dict[int, AS] = self._initialize_as()
+        self.backbone_as: AS = self._get_backbone_as()
+        self.routers: Dict[str, Router] = self._initialize_routers()
+        self.subnets: List[List[dict]] = self.intent.get("subnets", [])
+        self._assign_addresses()
 
-        # Allocation des adresses
-        self._assign_loopbacks_addr()
-        self._assign_physical_addr()
+    def _initialize_as(self) -> Dict[int, AS]:
+        return {as_cfg["as_number"]: AS(as_cfg) for as_cfg in self.intent.get("as", [])}
 
-    def _initialize_backbone(self):
-        """Initialise l'AS backbone."""
-        return AS(self.intent["backbone"])
+    def _get_backbone_as(self) -> AS:
+        for as_obj in self.as_objects.values():
+            if as_obj.backbone:
+                return as_obj
+        raise ValueError("AS backbone non trouvé")
 
-    def _initialize_routers(self):
-        """Initialise les objets Router."""
+    def _initialize_routers(self) -> Dict[str, Router]:
         routers = {}
 
-        # Création des routeurs PE
-        for pe_intent in self.intent["pe_routers"]:
-            router = Router(pe_intent, self.backbone_as, "PE")
-            routers[router.hostname] = router
+        for pe in self.intent.get("pe_routers", []):
+            router = Router(pe, self.backbone_as, "PE")
+            router.as_obj.mpls_config = self
+            routers[pe["hostname"]] = router
 
-        # Création des routeurs P
-        for p_intent in self.intent["p_routers"]:
-            router = Router(p_intent, self.backbone_as, "P")
-            routers[router.hostname] = router
+        for p in self.intent.get("p_routers", []):
+            router = Router(p, self.backbone_as, "P")
+            router.as_obj.mpls_config = self
+            routers[p["hostname"]] = router
+
+        for ce in self.intent.get("ce_routers", []):
+            as_number = ce["as_number"]
+            as_obj = self.as_objects[as_number]
+            as_obj.mpls_config = self  # Définir mpls_config sur l'objet AS
+            router = Router(ce, as_obj, "CE")
+            routers[ce["hostname"]] = router
 
         return routers
 
-    def _initialize_subnets(self):
-        """Initialise les sous-réseaux."""
-        return self.intent["subnets"]
+    def _assign_addresses(self):
+        """
+        Pour chaque lien (c'est-à-dire chaque liste de deux points de terminaison),
+        attribue un sous-réseau unique.
+        """
+        # Attribuer d'abord les adresses Loopback
+        for name, router in self.routers.items():
+            loopback = router.interfaces.get("Loopback0")
+            if loopback:
+                if router.as_obj.backbone and hasattr(router.as_obj, 'loopback_iterator'):
+                    loopback.ip_address = str(next(router.as_obj.loopback_iterator))
+                    loopback.ip_mask = "255.255.255.255"
 
-    def _assign_loopbacks_addr(self):
-        """Attribue des adresses loopback aux routeurs."""
-        for router in self.routers.values():
-            if "Loopback0" in router.interfaces:
-                try:
-                    ip = next(self.backbone_as.loopback_iterator)
-                    router.interfaces["Loopback0"].ip_address = f"{ip}"
-                    router.interfaces["Loopback0"].ip_mask = "255.255.0.0"
-                except StopIteration:
-                    raise ValueError("Pas assez d'adresses loopback disponibles")
+        # Puis attribuer les interfaces physiques
+        for endpoints in self.subnets:
+            # Déterminer si le lien connecte un routeur Customer Edge (CE).
+            is_pe_ce = any(self.routers[ep["router"]].type == "CE" for ep in endpoints)
 
-    def _assign_physical_addr(self):
-        """Attribue des adresses IP aux interfaces physiques."""
-        for subnet in self.subnets:
-            if not subnet or len(subnet) != 2:
-                continue
+            if is_pe_ce:
+                # Utiliser le pool d'adresses physiques spécifique à l'AS pour le routeur CE.
+                ce_endpoint = next(ep for ep in endpoints if self.routers[ep["router"]].type == "CE")
+                as_obj = self.routers[ce_endpoint["router"]].as_obj
+                network = next(as_obj.physical_iterator)
+            else:
+                # Utiliser le pool d'adresses du backbone AS si aucun CE n'est présent.
+                network = next(self.backbone_as.physical_iterator)
 
-            # Allocation d'un sous-réseau /24
-            try:
-                assigned_network = next(self.backbone_as.physical_iterator)
-                hosts_iterator = assigned_network.hosts()
+            # Convertir les hôtes disponibles du réseau en une liste et les attribuer.
+            ips = list(network.hosts())
+            for i, ep in enumerate(endpoints):
+                router = self.routers[ep["router"]]
+                iface = router.interfaces.get(ep["interface"])
+                if iface is None:
+                    raise ValueError(f"L'interface {ep['interface']} n'existe pas sur le router {ep['router']}.")
 
-                # Attribution des adresses aux deux extrémités
-                r1_name = subnet[0]["router"]
-                i1_name = subnet[0]["interface"]
+                iface.ip_address = str(ips[i])
+                iface.ip_mask = "255.255.255.0"
 
-                r2_name = subnet[1]["router"]
-                i2_name = subnet[1]["interface"]
+                if not is_pe_ce:
+                    iface.mpls_enabled = True
+                    iface.is_internal = True
 
-                # Assignation des adresses IP
-                self.routers[r1_name].interfaces[i1_name].ip_address = f"{next(hosts_iterator)}"
-                self.routers[r1_name].interfaces[i1_name].ip_mask = "255.255.255.0"
-
-                self.routers[r2_name].interfaces[i2_name].ip_address = f"{next(hosts_iterator)}"
-                self.routers[r2_name].interfaces[i2_name].ip_mask = "255.255.255.0"
-
-                # Marquage des interfaces comme internes
-                self.routers[r1_name].interfaces[i1_name].is_internal = True
-                self.routers[r2_name].interfaces[i2_name].is_internal = True
-
-                # Activation MPLS sur les interfaces P et PE
-                if self.routers[r1_name].type in ["P", "PE"]:
-                    self.routers[r1_name].interfaces[i1_name].mpls_enabled = True
-
-                if self.routers[r2_name].type in ["P", "PE"]:
-                    self.routers[r2_name].interfaces[i2_name].mpls_enabled = True
-
-            except StopIteration:
-                raise ValueError("Pas assez de sous-réseaux disponibles")
-
-    def generate_config(self, router_name):
-        """Génère la configuration d'un routeur spécifique."""
-        if router_name not in self.routers:
-            raise ValueError(f"Routeur {router_name} non trouvé")
-
+    def generate_config(self, router_name: str) -> str:
         router = self.routers[router_name]
-
-        # Créer un dictionnaire de routeurs PE pour la configuration BGP
         pe_routers = {name: r for name, r in self.routers.items() if r.type == "PE"}
-
         return "\n".join(router.generate_config_lines(pe_routers))
 
-    def generate_all_configs(self):
-        """Génère les configurations pour tous les routeurs."""
-        configs = {}
+    def generate_all_configs(self) -> Dict[str, str]:
+        return {name: self.generate_config(name) for name in self.routers}
 
-        # Créer un dictionnaire de routeurs PE pour la configuration BGP
-        pe_routers = {name: r for name, r in self.routers.items() if r.type == "PE"}
-
-        for name, router in self.routers.items():
-            configs[name] = "\n".join(router.generate_config_lines(pe_routers))
-        return configs
-
-    def recap(self):
-        """
-        Génère un récapitulatif du réseau, montrant toutes les adresses d'interface pour chaque routeur.
-        """
-        recap_lines = ["Récapitulatif du réseau MPLS:", "=" * 50]
-
-        # Parcourir tous les routeurs
-        for router_name, router in sorted(self.routers.items()):
-            recap_lines.append(f"\nRouteur: {router_name} (Type: {router.type})")
-            recap_lines.append("-" * 50)
-
-            # Parcourir les interfaces de chaque routeur
+    def recap(self) -> str:
+        summary = []
+        for name, router in sorted(self.routers.items()):
+            summary.append(f"{name} ({router.type}):")
             for iface_name, iface in sorted(router.interfaces.items()):
-                ip_info = f"{iface.ip_address}/{iface.ip_mask}" if iface.ip_address else "Pas d'adresse IP"
-
-                recap_lines.append(f"  Interface: {iface_name}")
-                recap_lines.append(f"    Adresse IP: {ip_info}")
-
-        return "\n".join(recap_lines)
-
+                summary.append(f" {iface_name}: {iface.ip_address}/{iface.ip_mask}")
+        return "\n".join(summary)

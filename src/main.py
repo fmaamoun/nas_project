@@ -185,14 +185,6 @@ class ConfigGeneratorApp:
         recap_text.insert("1.0", network_recap)
         recap_text.configure(state="disabled")  # Rendre le texte non modifiable
 
-        # Bouton pour fermer la fenêtre
-        close_button = ctk.CTkButton(
-            recap_window,
-            text="Fermer",
-            command=recap_window.destroy
-        )
-        close_button.pack(pady=10)
-
 if __name__ == "__main__":
     ctk.set_appearance_mode("System")
     ctk.set_default_color_theme("blue")

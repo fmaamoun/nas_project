@@ -68,7 +68,7 @@
       "hostname": "P1",
       "interfaces": [
         {"name": "Loopback0"},
-        {"name": "GigabitEthernet1/0"},
+        {"name": "GigabitEthernet1/0", "ospf_cost": 150},
         {"name": "GigabitEthernet2/0"}
       ]
     },
@@ -77,7 +77,7 @@
       "interfaces": [
         {"name": "Loopback0"},
         {"name": "GigabitEthernet1/0"},
-        {"name": "GigabitEthernet2/0"}
+        {"name": "GigabitEthernet2/0", "ospf_cost": 50}
       ]
     }
   ],

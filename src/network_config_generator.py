@@ -39,7 +39,7 @@ class NetworkConfigGenerator:
                     "type": rtype,
                     "as": as_num,
                     "vrfs": r.get("vrfs", []),
-                    "interfaces": {i["name"]: {"name": i["name"]} for i in r["interfaces"]}
+                    "interfaces": { i["name"]: dict(i) for i in r["interfaces"] }
                 }
         return routers
 
@@ -87,6 +87,9 @@ class NetworkConfigGenerator:
         if iface.get("internal") or iface['name'] == "Loopback0":
             if not vrf_name:
                 lines.append(f" ip ospf 1 area {as_num}")
+                # Add ospf cost if defined
+                if "ospf_cost" in iface:
+                    lines.append(f" ip ospf cost {iface['ospf_cost']}")
 
         # Auto-negotiation for physical interfaces
         if "GigabitEthernet" in iface['name']:

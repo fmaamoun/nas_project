@@ -19,6 +19,29 @@
       "ipv4_ranges": {
         "physical": "194.168.0.0/16"
       }
+        },{
+      "as_number": 65003,
+      "ipv4_ranges": {
+        "physical": "195.168.0.0/16"
+      }
+    },
+    {
+      "as_number": 65004,
+      "ipv4_ranges": {
+        "physical": "196.168.0.0/16"
+      }
+    },
+    {
+      "as_number": 65005,
+      "ipv4_ranges": {
+        "physical": "197.168.0.0/16"
+      }
+    },
+    {
+      "as_number": 65006,
+      "ipv4_ranges": {
+        "physical": "198.168.0.0/16"
+      }
     }
   ],
   "pe_routers": [
@@ -40,6 +63,7 @@
           },
           "associated_interfaces": ["GigabitEthernet3/0"]
         }
+
       ]
     },
     {
@@ -60,8 +84,68 @@
           },
           "associated_interfaces": ["GigabitEthernet3/0"]
         }
+
       ]
+    },
+    {
+  "hostname": "PE3",
+  "interfaces": [
+    {"name": "Loopback0"},
+    {"name": "GigabitEthernet1/0"},
+    {"name": "GigabitEthernet2/0"},
+    {"name": "GigabitEthernet3/0"}
+  ],
+  "vrfs": [
+    {
+      "name": "CLIENTX",
+      "rd": "65000:3",
+      "route_targets": {
+        "export": ["65000:3"],
+        "import": ["65000:3"]
+      },
+      "associated_interfaces": ["GigabitEthernet2/0"]
+    },
+    {
+      "name": "CLIENTY",
+      "rd": "65000:4",
+      "route_targets": {
+        "export": ["65000:4"],
+        "import": ["65000:4"]
+      },
+      "associated_interfaces": ["GigabitEthernet3/0"]
     }
+  ]
+},
+  {
+    "hostname": "PE4",
+    "interfaces": [
+      {"name": "Loopback0"},
+      {"name": "GigabitEthernet1/0"},
+      {"name": "GigabitEthernet2/0"},
+      {"name": "GigabitEthernet3/0"}
+    ],
+    "vrfs": [
+      {
+        "name": "CLIENTX",
+        "rd": "65000:5",
+        "route_targets": {
+          "export": ["65000:3"],
+          "import": ["65000:3"]
+        },
+        "associated_interfaces": ["GigabitEthernet2/0"]
+      },
+      {
+        "name": "CLIENTY",
+        "rd": "65000:6",
+        "route_targets": {
+          "export": ["65000:4"],
+          "import": ["65000:4"]
+        },
+        "associated_interfaces": ["GigabitEthernet3/0"]
+      }
+    ]
+  }
+
   ],
   "p_routers": [
     {
@@ -69,7 +153,8 @@
       "interfaces": [
         {"name": "Loopback0"},
         {"name": "GigabitEthernet1/0", "ospf_cost": 150},
-        {"name": "GigabitEthernet2/0"}
+        {"name": "GigabitEthernet2/0"},
+        { "name": "GigabitEthernet3/0"}
       ]
     },
     {
@@ -77,7 +162,8 @@
       "interfaces": [
         {"name": "Loopback0"},
         {"name": "GigabitEthernet1/0"},
-        {"name": "GigabitEthernet2/0", "ospf_cost": 50}
+        {"name": "GigabitEthernet2/0", "ospf_cost": 50},
+        { "name": "GigabitEthernet3/0"}
       ]
     }
   ],
@@ -91,7 +177,29 @@
       "as_number": 65002,
       "hostname": "CE2",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
+    },
+    {
+      "as_number": 65003,
+      "hostname": "CE3",
+      "interfaces": [{"name": "GigabitEthernet1/0"}]
+    },
+    {
+      "as_number": 65004,
+      "hostname": "CE4",
+      "interfaces": [{"name": "GigabitEthernet1/0"}]
+    },
+    {
+      "as_number": 65005,
+      "hostname": "CE5",
+      "interfaces": [{"name": "GigabitEthernet1/0"}]
+    },
+    {
+      "as_number": 65006,
+      "hostname": "CE6",
+      "interfaces": [{"name": "GigabitEthernet1/0"}]
     }
+
+
   ],
   "subnets": [
     [
@@ -117,6 +225,31 @@
     [
       {"router": "PE2", "interface": "GigabitEthernet3/0"},
       {"router": "CE2", "interface": "GigabitEthernet1/0"}
+    ],
+        [
+      {"router": "PE3", "interface": "GigabitEthernet1/0"},
+      {"router": "P1", "interface": "GigabitEthernet3/0"}
+    ],
+    [
+      {"router": "PE4", "interface": "GigabitEthernet1/0"},
+      {"router": "P2", "interface": "GigabitEthernet3/0"}
+    ],
+    [
+      {"router": "PE3", "interface": "GigabitEthernet2/0"},
+      {"router": "CE3", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "PE4", "interface": "GigabitEthernet2/0"},
+      {"router": "CE4", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "PE3", "interface": "GigabitEthernet3/0"},
+      {"router": "CE5", "interface": "GigabitEthernet1/0"}
+    ],
+    [
+      {"router": "PE4", "interface": "GigabitEthernet3/0"},
+      {"router": "CE6", "interface": "GigabitEthernet1/0"}
     ]
+
   ]
 }

@@ -41,6 +41,11 @@ class NetworkConfigGenerator:
                     "vrfs": r.get("vrfs", []),
                     "interfaces": { i["name"]: dict(i) for i in r["interfaces"] }
                 }
+
+                if rtype == "CE":
+                    routers[r["hostname"]]["network"] = r.get("network")
+                    routers[r["hostname"]]["interfaces"]["Loopback0"] = {"name": "Loopback0"}
+
         return routers
 
     # Assign IP addresses to Loopback and physical interfaces
@@ -51,6 +56,9 @@ class NetworkConfigGenerator:
             if iface and self.__as_map[router["as"]]["loopback_iter"]:
                 ip = str(next(self.__as_map[router["as"]]["loopback_iter"]))
                 iface.update({"ip": ip, "mask": "255.255.255.255", "internal": True})
+            elif router["type"] == "CE":
+                network = ipaddress.IPv4Network(router['network'])
+                iface.update({"ip": network.network_address.__str__(), "mask": network.netmask.__str__(), "internal": False, "ce_test": True})
 
         # Assign physical IPs to links/subnets
         for link in self.__intent["subnets"]:
@@ -73,6 +81,7 @@ class NetworkConfigGenerator:
 
     # Build the configuration of an interface
     def __build_interface_config(self, iface, as_num, vrf_name=None):
+        print(iface)
         lines = [f"interface {iface['name']}"]
 
         # Add VRF if applicable
@@ -85,11 +94,11 @@ class NetworkConfigGenerator:
 
         # OSPF for internal or Loopback interfaces
         if iface.get("internal") or iface['name'] == "Loopback0":
-            if not vrf_name:
-                lines.append(f" ip ospf 1 area {as_num}")
-                # Add ospf cost if defined
-                if "ospf_cost" in iface:
-                    lines.append(f" ip ospf cost {iface['ospf_cost']}")
+            if not iface.get("ce_test"):
+                if not vrf_name:
+                    lines.append(f" ip ospf 1 area {as_num}")
+                    if "ospf_cost" in iface:
+                        lines.append(f" ip ospf cost {iface['ospf_cost']}")
 
         # Auto-negotiation for physical interfaces
         if "GigabitEthernet" in iface['name']:

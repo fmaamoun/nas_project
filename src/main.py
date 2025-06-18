@@ -107,27 +107,16 @@ class MainApp:
 
     def generate_configs(self):
         # Load JSON, generate configs, write to GNS3, and show recap
-        try:
-            with open(self.json_file_path, "r") as f:
-                self.intent_file = json.load(f)
+        with open(self.json_file_path, "r") as f:
+            self.intent_file = json.load(f)
 
-            generator = NetworkConfigGenerator(self.intent_file)
-            project   = Gns3Manager(self.project_path)
-            configs   = generator.generate_all_configs()
-            project.write_router_config(configs)
+        generator = NetworkConfigGenerator(self.intent_file)
+        project   = Gns3Manager(self.project_path)
+        configs   = generator.generate_all_configs()
+        project.write_router_config(configs)
 
-            self.show_network_recap(generator)
-            self.show_message("Success", "Config files generated successfully!", icon="check")
-
-        except ValidationError as e:
-            msgs = "; ".join(err["msg"] for err in e.errors())
-            self.show_message("Validation Error", msgs)
-        except (IOError, ValueError) as e:
-            self.show_message(type(e).__name__, str(e))
-        except Exception as e:
-            self.show_message("Error", f"Unexpected error: {e}")
-        finally:
-            self.reset()
+        self.show_network_recap(generator)
+        self.show_message("Success", "Config files generated successfully!", icon="check")
 
     def show_network_recap(self, generator):
         # Open a window displaying the network recap

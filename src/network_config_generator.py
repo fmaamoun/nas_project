@@ -43,7 +43,7 @@ class NetworkConfigGenerator:
                 }
 
                 if rtype == "CE":
-                    routers[r["hostname"]]["network"] = r.get("network")
+                    routers[r["hostname"]]["private_network"] = r.get("private_network")
                     routers[r["hostname"]]["interfaces"]["Loopback0"] = {"name": "Loopback0"}
 
         return routers
@@ -57,7 +57,7 @@ class NetworkConfigGenerator:
                 ip = str(next(self.__as_map[router["as"]]["loopback_iter"]))
                 iface.update({"ip": ip, "mask": "255.255.255.255", "internal": True})
             elif router["type"] == "CE":
-                network = ipaddress.IPv4Network(router['network'])
+                network = ipaddress.IPv4Network(router["private_network"])
                 iface.update({"ip": network.network_address.__str__(), "mask": network.netmask.__str__(), "internal": False, "ce_test": True})
 
         # Assign physical IPs to links/subnets

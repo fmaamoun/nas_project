@@ -172,37 +172,37 @@
     {
       "as_number": 65001,
       "hostname": "CE1",
-      "network": "10.1.1.1/32",
+      "private_network": "10.1.1.1/32",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
     },
     {
       "as_number": 65002,
       "hostname": "CE2",
-      "network": "10.2.2.2/32",
+      "private_network": "10.2.2.2/32",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
     },
     {
       "as_number": 65003,
       "hostname": "CE3",
-      "network": "10.3.3.3/32",
+      "private_network": "10.3.3.3/32",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
     },
     {
       "as_number": 65004,
       "hostname": "CE4",
-      "network": "10.4.4.4/32",
+      "private_network": "10.4.4.4/32",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
     },
     {
       "as_number": 65005,
       "hostname": "CE5",
-      "network": "10.5.5.5/32",
+      "private_network": "10.5.5.5/32",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
     },
     {
       "as_number": 65006,
       "hostname": "CE6",
-      "network": "10.6.6.6/32",
+      "private_network": "10.6.6.6/32",
       "interfaces": [{"name": "GigabitEthernet1/0"}]
     }
   ],

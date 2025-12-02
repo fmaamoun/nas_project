@@ -3,7 +3,6 @@ from pathlib import Path
 from tkinter import filedialog
 
 import customtkinter as ctk
-from pydantic import ValidationError
 from CTkMessagebox import CTkMessagebox
 
 from network_config_generator import NetworkConfigGenerator
@@ -62,11 +61,12 @@ class MainApp:
             self.project_label = label
 
     def reset(self):
-        # Reset UI controls and internal state
+        # Reset internal state
         self.json_file_path = None
         self.project_path = None
         self.intent_file = None
 
+        # Reset UI controls
         self.json_label.configure(text="No file selected")
         self.project_label.configure(text="No project path selected")
         self.generate_button.configure(state="disabled")
